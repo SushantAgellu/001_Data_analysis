@@ -1,0 +1,68 @@
+---
+title: "00_DatFiles"
+author: "Sushant Agellu"
+date: "2026-02-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#Loads a package that allows R to talk to the **GEO database** (a public gene expression database).
+
+library(GEOquery)
+# Loads a package that helps read and write big data files quickly.
+library(data.table)
+```
+
+
+
+## Download metadata (GEO series matrix)
+```{r}
+gse_id <- "GSE60424"
+
+# getGEO() connects to the GEO website
+# here from the website we searched gse_id , list of search from GSE60424 
+gse_list <- getGEO(gse_id, GSEMatrix = TRUE)
+
+# and selected first result with 
+gse <- gse_list[[1]]
+
+# geting the metadata of the first result
+metadata <- pData(gse)
+
+# Saving the metadata file as .Csv file on pc
+write.csv(metadata, file.path("00_DataFiles", paste0(gse_id, "_metadata.csv")), row.names = FALSE)
+
+# gives number of rows and colomns
+dim(metadata)
+```
+
+
+#Download supplementary file (expression matrix)
+```{r}
+getGEOSuppFiles(gse_id, makeDirectory = TRUE, baseDir = "00_DataFiles")
+
+list.files("00_DataFiles", recursive = TRUE)
+```
+
+## Read supplementary normalized counts and save as CSV 
+```{r}
+
+supp_dir <- file.path("00_DataFiles", gse_id)
+
+supp_files <- list.files(
+  path = supp_dir,
+  pattern = "normalized_counts.*\\.txt\\.gz$",
+  full.names = TRUE
+)
+
+if (length(supp_files) == 0) {
+  stop("Normalized counts file not found in 00_DataFiles/GSE60424/")
+}
+
+expr_counts <- fread(supp_files[1])
+
+fwrite(expr_counts, file.path("00_DataFiles", paste0(gse_id, "_expression_matrix_from_supp.csv")))
+
+dim(expr_counts)
+```
+

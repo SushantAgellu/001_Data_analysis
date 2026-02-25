@@ -1,0 +1,136 @@
+---
+title: "01_DataCleaning"
+author: "Sushant Agellu"
+date: "2026-02-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+library(data.table)
+library(dplyr)
+library(stringr)
+
+```
+
+
+
+```{r}
+gse_id <- "GSE60424"
+
+meta_path  <- "D:/sushant masters at SLU/Data analysis/001_Data_analysis/00_DataFiles/GSE60424_metadata.csv"
+
+expr_path  <- "D:/sushant masters at SLU/Data analysis/001_Data_analysis/00_DataFiles/GSE60424_expression_matrix_from_supp"
+
+metadata_raw <- fread(meta_path)
+expr_raw     <- fread(expr_path)
+
+dim(metadata_raw)
+dim(expr_raw)
+```
+```{r}
+# Make column names easier to work with
+metadata <- metadata_raw
+names(metadata) <- names(metadata) |>
+  tolower() |>
+  str_replace_all("[^a-z0-9]+", "_") |>
+  str_replace_all("_+$", "")
+
+# Common useful columns in this dataset
+# (Some GEO exports store them as: age_ch1, diseasestatus_ch1, celltype_ch1, gender_ch1, etc.)
+keep_cols <- c(
+  "geo_accession", "title",
+  "age_ch1", "gender_ch1", "race_ch1",
+  "celltype_ch1", "diseasestatus_ch1",
+  "donorid_ch1", "samplename_ch1",
+  "collectiondate_ch1"
+)
+
+keep_cols <- keep_cols[keep_cols %in% names(metadata)]
+metadata_clean <- metadata[, ..keep_cols]
+
+# Basic standardization (small, safe cleaning)
+if ("gender_ch1" %in% names(metadata_clean)) {
+  metadata_clean$gender_ch1 <- toupper(metadata_clean$gender_ch1)
+}
+
+if ("diseasestatus_ch1" %in% names(metadata_clean)) {
+  metadata_clean$diseasestatus_ch1 <- str_squish(metadata_clean$diseasestatus_ch1)
+}
+
+# Save cleaned metadata
+if (!dir.exists("01_DataCleaning")) dir.create("01_DataCleaning")
+fwrite(metadata_clean, file.path("D:/sushant masters at SLU/Data analysis/001_Data_analysis/01_DataCleaning", paste0(gse_id, "_metadata_clean.csv")))
+dim(metadata_clean)
+head(metadata_clean, 5)
+```
+
+
+```{r}
+# Load expression matrix (raw) from 00_DataFiles
+gse_id <- "GSE60424"
+
+counts <- fread(
+  file.path("..", "00_DataFiles",
+            paste0(gse_id, "_expression_matrix_from_supp.csv"))
+)
+```
+
+
+```{r}
+## 3) Clean expression matrix (simple version)
+
+# Rename first column to gene_id (whatever its original name was)
+names(counts)[1] <- "gene_id"
+
+# Remove duplicate genes if any
+counts_clean <- counts %>%
+  distinct(gene_id, .keep_all = TRUE)
+
+# Check structure
+dim(counts_clean)
+
+# Preview first few columns
+head(counts_clean[, 1:6])
+
+# Save cleaned counts
+fwrite(counts_clean,
+       file.path("D:/sushant masters at SLU/Data analysis/001_Data_analysis/01_DataCleaning", paste0(gse_id, "_counts_clean.csv")))
+```
+
+
+```{r}
+# Try extracting lib### from title (best case)
+sample_map <- metadata_clean %>%
+  mutate(
+    lib_id = if ("title" %in% names(metadata_clean)) str_extract(title, "lib\\d+") else NA_character_
+  ) %>%
+  mutate(
+    gsm_id = if ("geo_accession" %in% names(metadata_clean)) geo_accession else NA_character_
+  ) %>%
+  select(gsm_id, lib_id, everything())
+
+found_lib <- sum(!is.na(sample_map$lib_id))
+
+if (found_lib == 0) {
+  # Fallback: assume lib columns are in the same order as metadata rows
+  lib_order <- sample_cols
+  if (nrow(metadata_clean) != length(lib_order)) {
+    warning("Metadata rows and lib columns differ; order-based mapping may be unsafe.")
+  }
+
+  sample_map <- metadata_clean %>%
+    mutate(
+      gsm_id = if ("geo_accession" %in% names(metadata_clean)) geo_accession else as.character(row_number()),
+      lib_id = lib_order[1:n()]
+    ) %>%
+    select(gsm_id, lib_id, everything())
+}
+
+# Save sample map
+fwrite(sample_map, file.path("D:/sushant masters at SLU/Data analysis/001_Data_analysis/01_DataCleaning", paste0(gse_id, "_sample_map.csv")))
+
+head(sample_map, 10)
+cat("Lib IDs found from title:", found_lib, "\n")
+```
+
