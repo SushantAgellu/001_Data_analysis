@@ -1,0 +1,143 @@
+---
+title: "02_DataExploration"
+author: "Sushant Agellu"
+date: "2026-03-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(dplyr)
+library(ggplot2)
+
+```
+
+
+```{r}
+
+gse_id <- "GSE60424"
+
+metadata <- fread(file.path("..", "01_DataCleaning", paste0(gse_id, "_metadata_clean.csv")))
+counts <- fread(file.path("..", "01_DataCleaning", paste0(gse_id, "_counts_clean.csv")))
+
+dim(metadata)
+dim(counts)
+
+```
+
+
+
+```{r}
+names(metadata)
+head(metadata)
+
+summary(metadata)
+
+table(metadata$diseasestatus_ch1)
+table(metadata$gender_ch1)
+```
+
+
+
+```{r}
+ggplot(metadata, aes(x = diseasestatus_ch1, fill = diseasestatus_ch1)) +
+  geom_bar() +
+  scale_fill_manual(values = c(
+    "Healthy Control" = "green",
+    "Type 1 Diabetes" = "red",
+    "Sepsis" = "blue",
+    "ALS" = "purple",
+    "MS pretreatment" = "orange",
+    "MS posttreatment" = "brown"
+  )) +
+  theme_minimal() +
+  labs(title = "Number of Samples by Disease Status",
+       x = "Disease Status",
+       y = "Count",
+       fill = "Disease") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+
+head(counts[, 1:6])
+
+# remove gene_id column and keep only numeric expression values
+expr_only <- counts[, -1]
+
+dim(expr_only)
+summary(expr_only[, 1:5])
+```
+
+```{r}
+sample_totals <- colSums(expr_only)
+
+sample_totals_df <- data.frame(
+  sample = names(sample_totals),
+  total_counts = sample_totals
+)
+
+ggplot(sample_totals_df, aes(x = total_counts)) +
+  geom_histogram(bins = 30) +
+  theme_minimal() +
+  labs(title = "Distribution of Total Counts per Sample",
+       x = "Total Counts",
+       y = "Number of Samples")
+```
+
+```{r}
+expr_log <- log2(expr_only + 1)
+summary(expr_log[, 1:5])
+```
+```{r}
+
+# Remove gene_id column and convert expression data to a numeric matrix
+expr_matrix <- as.matrix(counts[, -1])
+
+# Log transform
+expr_log <- log2(expr_matrix + 1)
+
+# Keep only genes with non-zero standard deviation
+keep_genes <- apply(expr_log, 1, sd) > 0
+expr_log_filtered <- expr_log[keep_genes, ]
+
+# Run PCA
+pca <- prcomp(t(expr_log_filtered), scale. = TRUE)
+
+# Extract sample names from metadata title
+metadata$sample <- metadata$title
+
+# PCA dataframe
+pca_df <- data.frame(
+  sample = rownames(pca$x),
+  PC1 = pca$x[, 1],
+  PC2 = pca$x[, 2]
+)
+
+# Merge PCA results with metadata
+pca_df <- merge(pca_df, metadata, by = "sample")
+
+# Plot PCA with disease colors and ellipses
+ggplot(pca_df, aes(x = PC1, y = PC2, color = diseasestatus_ch1)) +
+  geom_point(size = 1) +
+  stat_ellipse() +
+  scale_color_manual(values = c(
+    "Healthy Control" = "green",
+    "Type 1 Diabetes" = "red",
+    "Sepsis" = "blue",
+    "ALS" = "purple",
+    "MS pretreatment" = "orange",
+    "MS posttreatment" = "brown"
+  )) +
+  theme_minimal() +
+  labs(title = "PCA by Disease Status", color = "Disease")
+```
+
+
+```{r}
+
+
+
+```
+
