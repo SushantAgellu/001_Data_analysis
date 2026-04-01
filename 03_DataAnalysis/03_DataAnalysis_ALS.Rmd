@@ -1,0 +1,126 @@
+---
+title: "03_DataAnalysisALS"
+author: "Sushant Agellu"
+date: "2026-03-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(dplyr)
+library(DESeq2)
+library(ggplot2)
+```
+
+
+
+```{r}
+
+# Loading the Data 
+gse_id <- "GSE60424"
+
+metadata <- fread(file.path("..", "01_DataCleaning", paste0(gse_id, "_metadata_clean.csv")))
+counts <- fread(file.path("..", "01_DataCleaning", paste0(gse_id, "_counts_clean.csv")))
+
+dim(metadata)
+dim(counts)
+```
+
+
+
+### For ALS DataAnalaysis Part
+
+```{r}
+# Keep only Healthy Control and ALS
+metadata_sub <- metadata %>%
+  filter(diseasestatus_ch1 %in% c("Healthy Control", "ALS"))
+
+table(metadata_sub$diseasestatus_ch1)
+dim(metadata_sub)
+
+# sample names in metadata are in the title column
+metadata_sub$sample <- metadata_sub$title
+
+# keep only count columns for those samples
+keep_samples <- metadata_sub$sample
+counts_sub <- counts[, c("gene_id", keep_samples), with = FALSE]
+
+# make count matrix
+count_matrix <- as.data.frame(counts_sub)
+rownames(count_matrix) <- count_matrix$gene_id
+count_matrix$gene_id <- NULL
+count_matrix <- as.matrix(count_matrix)
+
+# reorder metadata to match count matrix
+metadata_sub <- metadata_sub[match(colnames(count_matrix), metadata_sub$sample), ]
+
+# check
+all(colnames(count_matrix) == metadata_sub$sample)
+
+# set factor levels
+metadata_sub$diseasestatus_ch1 <- factor(
+  metadata_sub$diseasestatus_ch1,
+  levels = c("Healthy Control", "ALS")
+)
+
+table(metadata_sub$diseasestatus_ch1)
+
+# create DESeq2 dataset
+dds <- DESeqDataSetFromMatrix(
+  countData = count_matrix,
+  colData = metadata_sub,
+  design = ~ diseasestatus_ch1
+)
+
+# filter low-count genes
+dds <- dds[rowSums(counts(dds)) > 10, ]
+
+# run DESeq2
+dds <- DESeq(dds)
+
+# get ALS vs Healthy results
+res <- results(dds, contrast = c("diseasestatus_ch1", "ALS", "Healthy Control"))
+
+res_df <- as.data.frame(res)
+res_df$gene_id <- rownames(res_df)
+
+head(res_df)
+summary(res)
+
+# save results
+write.csv(res_df, "GSE60424_ALS_vs_Healthy_DESeq2_results.csv", row.names = FALSE)
+```
+
+
+
+
+# MA Plot For ALS
+```{r}
+plotMA(res, main = "MA Plot: ALS vs Healthy", ylim = c(-5, 5))
+```
+
+#Volcano Plot for ALS
+```{r}
+res_df$significant <- ifelse(res_df$padj < 0.05, "Yes", "No")
+
+ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj), color = significant)) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Volcano Plot: ALS vs Healthy")
+```
+
+##HeatMap For ALS
+```{r}
+library(pheatmap)
+
+top_genes <- res_df %>%
+  arrange(padj) %>%
+  head(20) %>%
+  pull(gene_id)
+
+heat_data <- count_matrix[top_genes, ]
+
+pheatmap(log2(heat_data + 1),
+         cluster_rows = TRUE,
+         cluster_cols = TRUE)
+```

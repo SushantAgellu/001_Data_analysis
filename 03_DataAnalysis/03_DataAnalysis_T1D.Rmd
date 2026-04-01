@@ -1,0 +1,170 @@
+---
+title: "03_DataAnalysis"
+author: "Sushant Agellu"
+date: "2026-03-31"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+library(data.table)
+library(dplyr)
+library(DESeq2)
+library(ggplot2)
+```
+
+
+
+```{r}
+
+# Loading the Data 
+gse_id <- "GSE60424"
+
+metadata <- fread(file.path("..", "01_DataCleaning", paste0(gse_id, "_metadata_clean.csv")))
+counts <- fread(file.path("..", "01_DataCleaning", paste0(gse_id, "_counts_clean.csv")))
+
+dim(metadata)
+dim(counts)
+```
+
+```{r}
+#COntrol Vs Diabetes1
+
+
+metadata_sub <- metadata %>%
+  filter(diseasestatus_ch1 %in% c("Healthy Control", "Type 1 Diabetes"))
+
+table(metadata_sub$diseasestatus_ch1)
+dim(metadata_sub)
+```
+
+
+```{r}
+# sample names in metadata are in the title column (lib221, lib222, etc.)
+metadata_sub$sample <- metadata_sub$title
+
+# keep only count columns for those samples
+keep_samples <- metadata_sub$sample
+
+counts_sub <- counts[, c("gene_id", keep_samples), with = FALSE]
+
+dim(counts_sub)
+head(counts_sub[, 1:6])
+
+
+```
+
+
+```{r}
+# Making a CountMatrix
+count_matrix <- as.data.frame(counts_sub)
+rownames(count_matrix) <- count_matrix$gene_id
+count_matrix$gene_id <- NULL
+
+count_matrix <- as.matrix(count_matrix)
+
+# reorder metadata so it matches count matrix columns
+metadata_sub <- metadata_sub[match(colnames(count_matrix), metadata_sub$sample), ]
+
+# check
+all(colnames(count_matrix) == metadata_sub$sample)
+
+```
+
+
+```{r}
+metadata_sub$diseasestatus_ch1 <- factor(
+  metadata_sub$diseasestatus_ch1,
+  levels = c("Healthy Control", "Type 1 Diabetes")
+)
+
+table(metadata_sub$diseasestatus_ch1)
+```
+
+
+
+```{r}
+dds <- DESeqDataSetFromMatrix(
+  countData = count_matrix,
+  colData = metadata_sub,
+  design = ~ diseasestatus_ch1
+)
+
+dds
+```
+
+
+```{r}
+
+dds <- dds[rowSums(counts(dds)) > 10, ]
+
+dds
+
+dds <- DESeq(dds)
+```
+```{r}
+res <- results(dds, contrast = c("diseasestatus_ch1", "Type 1 Diabetes", "Healthy Control"))
+
+res_df <- as.data.frame(res)
+res_df$gene_id <- rownames(res_df)
+
+head(res_df)
+summary(res)
+```
+
+```{r}
+write.csv(res_df, "GSE60424_T1D_vs_Healthy_DESeq2_results.csv", row.names = FALSE)
+```
+
+
+```{r}
+table(metadata_sub$diseasestatus_ch1)
+dds
+summary(res)
+```
+
+# MAking the plots
+
+# MA PLots 
+```{r}
+
+plotMA(res, main = "MA Plot: T1D vs Healthy", ylim = c(-5, 5))
+```
+
+
+#Volcano Plot
+
+```{r}
+
+
+
+res_df$significant <- ifelse(res_df$padj < 0.05, "Yes", "No")
+
+ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj), color = significant)) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Volcano Plot: T1D vs Healthy")
+
+```
+
+
+# Heatmap
+```{r}
+
+library(pheatmap)
+
+# top 20 genes
+top_genes <- res_df %>%
+  arrange(padj) %>%
+  head(20) %>%
+  pull(gene_id)
+
+heat_data <- count_matrix[top_genes, ]
+
+pheatmap(log2(heat_data + 1),
+         cluster_rows = TRUE,
+         cluster_cols = TRUE)
+
+```
+
+
