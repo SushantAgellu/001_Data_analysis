@@ -92,21 +92,90 @@ summary(expr_log[, 1:5])
 ```
 ```{r}
 
-# Remove gene_id column and convert expression data to a numeric matrix
+# #  Subset metadata (ALS vs Healthy)
+# metadata_sub <- metadata %>%
+#   filter(diseasestatus_ch1 %in% c("ALS", "Healthy Control"))
+# 
+# #  Expression matrix
+# expr_matrix <- as.matrix(counts[, -1])
+# 
+# expr_log <- log2(expr_matrix + 1)
+# 
+# samples_keep <- metadata_sub$title
+# expr_sub <- expr_log[, samples_keep]
+# 
+# 
+# keep_genes <- apply(expr_sub, 1, var) > 0
+# expr_sub <- expr_sub[keep_genes, ]
+# 
+# # Step 5: PCA
+# pca <- prcomp(t(expr_sub), scale. = TRUE)
+# 
+# # Percent variance explained
+# percent_var <- round(100 * (pca$sdev^2 / sum(pca$sdev^2)), 1)
+# 
+# # PCA dataframe
+# pca_df <- data.frame(
+#   sample = rownames(pca$x),
+#   PC1 = pca$x[, 1],
+#   PC2 = pca$x[, 2]
+# )
+# 
+# # Add disease labels
+# metadata_sub$sample <- metadata_sub$title
+# pca_df <- merge(pca_df, metadata_sub[, c("sample", "diseasestatus_ch1")], by = "sample")
+# 
+# # Plot
+# pca_plot_ALS <- ggplot(pca_df, aes(x = PC1, y = PC2, color = diseasestatus_ch1)) +
+#   geom_point(size = 3) +
+#   scale_color_manual(values = c(
+#     "Healthy Control" = "green",
+#     "ALS" = "purple"
+#   )) +
+#   theme_minimal() +
+#   labs(
+#     title = "PCA: ALS vs Healthy Control",
+#     x = paste0("PC1 (", percent_var[1], "%)"),
+#     y = paste0("PC2 (", percent_var[2], "%)"),
+#     color = "Disease"
+#   )
+# 
+# # Save PNG
+# ggsave("PCA_plot_ALS.png", plot = pca_plot_ALS, width = 8, height = 6, dpi = 300)
+
+
+```
+
+
+## For T1D
+```{r}
+
+# Keep only T1D and Healthy Control whole blood samples
+metadata_sub <- metadata %>%
+  filter(
+    diseasestatus_ch1 %in% c("Type 1 Diabetes", "Healthy Control"),
+    celltype_ch1 == "Whole Blood"
+  )
+
+# Expression matrix without gene_id column
 expr_matrix <- as.matrix(counts[, -1])
 
 # Log transform
 expr_log <- log2(expr_matrix + 1)
 
-# Keep only genes with non-zero standard deviation
-keep_genes <- apply(expr_log, 1, sd) > 0
-expr_log_filtered <- expr_log[keep_genes, ]
+# Keep only selected samples
+samples_keep <- metadata_sub$title
+expr_sub <- expr_log[, samples_keep]
+
+# Remove zero-variance genes after subsetting
+keep_genes <- apply(expr_sub, 1, var) > 0
+expr_sub <- expr_sub[keep_genes, ]
 
 # Run PCA
-pca <- prcomp(t(expr_log_filtered), scale. = TRUE)
+pca <- prcomp(t(expr_sub), scale. = TRUE)
 
-# Extract sample names from metadata title
-metadata$sample <- metadata$title
+# Percent variance explained
+percent_var <- round(100 * (pca$sdev^2 / sum(pca$sdev^2)), 1)
 
 # PCA dataframe
 pca_df <- data.frame(
@@ -115,29 +184,30 @@ pca_df <- data.frame(
   PC2 = pca$x[, 2]
 )
 
-# Merge PCA results with metadata
-pca_df <- merge(pca_df, metadata, by = "sample")
+# Add disease labels
+metadata_sub$sample <- metadata_sub$title
+pca_df <- merge(pca_df, metadata_sub[, c("sample", "diseasestatus_ch1")], by = "sample")
 
-# Plot PCA with disease colors and ellipses
-ggplot(pca_df, aes(x = PC1, y = PC2, color = diseasestatus_ch1)) +
-  geom_point(size = 1) +
-  stat_ellipse() +
+# Plot
+pca_plot_T1D <- ggplot(pca_df, aes(x = PC1, y = PC2, color = diseasestatus_ch1)) +
+  geom_point(size = 3) +
   scale_color_manual(values = c(
     "Healthy Control" = "green",
-    "Type 1 Diabetes" = "red",
-    "Sepsis" = "blue",
-    "ALS" = "purple",
-    "MS pretreatment" = "orange",
-    "MS posttreatment" = "brown"
+    "Type 1 Diabetes" = "red"
   )) +
   theme_minimal() +
-  labs(title = "PCA by Disease Status", color = "Disease")
-```
+  labs(
+    title = "PCA: Type 1 Diabetes vs Healthy Control",
+    x = paste0("PC1 (", percent_var[1], "%)"),
+    y = paste0("PC2 (", percent_var[2], "%)"),
+    color = "Disease"
+  )
 
+# Save PNG
+ggsave("PCA_plot_T1D.png", plot = pca_plot_T1D, width = 8, height = 6, dpi = 300)
 
-```{r}
-
-
+# Show plot
+pca_plot_T1D
 
 ```
 
