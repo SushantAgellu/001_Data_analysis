@@ -1,0 +1,220 @@
+---
+title: "Statistical Analysis (DESeq2, ALS vs Healthy Control)"
+author: "Sushant Agellu"
+date: "2026-04-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(data.table)
+library(dplyr)
+library(DESeq2)
+library(tibble)
+
+select  <- dplyr::select
+filter  <- dplyr::filter
+mutate  <- dplyr::mutate
+arrange <- dplyr::arrange
+```
+
+
+
+# Paths — Update These to Match Your Machine
+
+```{r paths}
+clean_dir    <- "D:/sushant masters at SLU/Data analysis/001_Data_analysis/01_DataCleaning"
+
+# Base output folder
+output_dir <- "D:/sushant masters at SLU/Data analysis/001_Data_analysis/03_DataAnalysis/01_StatisticalAnalysis"
+
+# Subfolders (all numbered for consistency)
+results_dir     <- file.path(output_dir, "01_DESeq2_results")
+vst_dir         <- file.path(output_dir, "02_VST_counts")
+dispersion_dir  <- file.path(output_dir, "03_Dispersion_plots")
+
+for (d in c(output_dir, results_dir, vst_dir, dispersion_dir)) {
+  if (!dir.exists(d)) dir.create(d, recursive = TRUE)
+}
+
+
+```
+
+
+
+# Load Cleaned Data
+
+```{r load-data}
+counts_clean <- fread(file.path(clean_dir, "GSE60424_counts_clean.csv"))
+sample_map   <- fread(file.path(clean_dir, "GSE60424_sample_map.csv"))
+
+counts_mat           <- as.data.frame(counts_clean)
+rownames(counts_mat) <- counts_mat$gene_id
+counts_mat$gene_id   <- NULL
+
+cat("Counts matrix:", nrow(counts_mat), "genes ×", ncol(counts_mat), "samples\n")
+cat("\nSamples per disease group:\n"); print(table(sample_map$diseasestatus_ch1))
+cat("\nSamples per cell type:\n");     print(table(sample_map$celltype_ch1))
+```
+
+
+# Parameters
+
+```{r parameters}
+DISEASE_A   <- "ALS"
+DISEASE_B   <- "Healthy Control"
+
+CELL_TYPES  <- c("Neutrophils", "Monocytes", "CD4", "CD8", "B-cells", "NK", "Whole Blood")
+
+MIN_COUNTS  <- 10
+MIN_SAMPLES <- 2
+PADJ_CUTOFF <- 0.05
+LFC_CUTOFF  <- 1.0
+
+safe <- function(x) gsub("[^A-Za-z0-9]", "_", x)
+```
+
+
+
+# Gene Symbol Annotation (Converts Ensembl IDs → gene symbols). Requires `org.Hs.eg.db` 
+
+```{r annotation}
+annotate_genes <- function(gene_ids) {
+  gene_ids_clean <- sub("\\..*$", "", gene_ids)
+  
+  if (requireNamespace("org.Hs.eg.db", quietly = TRUE) &&
+      requireNamespace("AnnotationDbi", quietly = TRUE)) {
+    syms <- AnnotationDbi::mapIds(
+      org.Hs.eg.db::org.Hs.eg.db,
+      keys      = gene_ids_clean,
+      column    = "SYMBOL",
+      keytype   = "ENSEMBL",
+      multiVals = "first"
+    )
+    result <- data.frame(gene_id     = gene_ids,
+                         gene_symbol = unname(syms),
+                         stringsAsFactors = FALSE)
+    result$gene_symbol[is.na(result$gene_symbol)] <-
+      result$gene_id[is.na(result$gene_symbol)]
+    return(result)
+  }
+  
+  data.frame(gene_id = gene_ids, gene_symbol = gene_ids, stringsAsFactors = FALSE)
+}
+```
+
+
+
+# DESeq2 Analysis Function
+
+#For each cell type:
+#1. Subsets samples (ALS + HC only)
+#2. Filters low-count genes (≥10 counts in ≥2 samples)
+#3. Fits DESeq2 negative-binomial GLM with design = ~ disease
+#4. Runs the Wald test, applies BH correction (padj)
+#5. Saves: DEG table, VST counts, dispersion plot (PNG)
+
+```{r deseq2-function}
+run_deseq2 <- function(cell_type) {
+  
+  cat("\n", strrep("=", 60), "\n")
+  cat("Cell type:", cell_type, "  |  ", DISEASE_A, "vs", DISEASE_B, "\n")
+  cat(strrep("=", 60), "\n")
+  
+  meta_sub <- sample_map %>%
+    filter(celltype_ch1      == cell_type,
+           diseasestatus_ch1 %in% c(DISEASE_A, DISEASE_B)) %>%
+    mutate(disease = factor(diseasestatus_ch1, levels = c(DISEASE_B, DISEASE_A)))
+  
+  if (nrow(meta_sub) < 4) { cat("  <4 samples — skipping.\n"); return(NULL) }
+  
+  shared_libs <- intersect(meta_sub$lib_id, colnames(counts_mat))
+  counts_sub  <- counts_mat[, shared_libs, drop = FALSE]
+  meta_sub    <- meta_sub %>% filter(lib_id %in% shared_libs) %>%
+    arrange(match(lib_id, colnames(counts_sub)))
+  stopifnot(all(colnames(counts_sub) == meta_sub$lib_id))
+  
+  cat("  Samples:", nrow(meta_sub),
+      "( ALS =", sum(meta_sub$disease == DISEASE_A),
+      "| HC =",  sum(meta_sub$disease == DISEASE_B), ")\n")
+  
+  keep        <- rowSums(counts_sub >= MIN_COUNTS) >= MIN_SAMPLES
+  counts_filt <- counts_sub[keep, ]
+  cat("  Genes after filtering:", nrow(counts_filt), "\n")
+  
+  col_data <- data.frame(disease = meta_sub$disease, row.names = meta_sub$lib_id)
+  dds      <- DESeqDataSetFromMatrix(counts_filt, col_data, ~ disease)
+  dds      <- DESeq(dds, quiet = TRUE)
+  
+  # Dispersion plot (PNG, QC)
+  disp_file <- file.path(dispersion_dir, paste0("Dispersion_", safe(cell_type), ".png"))
+  png(disp_file, width = 7, height = 5, units = "in", res = 300)
+  plotDispEsts(dds, main = paste("Dispersion Estimates —", cell_type))
+  dev.off()
+  
+  res    <- results(dds, contrast = c("disease", DISEASE_A, DISEASE_B), alpha = PADJ_CUTOFF)
+  res_df <- as.data.frame(res) %>%
+    rownames_to_column("gene_id") %>%
+    filter(!is.na(padj)) %>%
+    mutate(Expression = case_when(
+      padj < PADJ_CUTOFF & log2FoldChange >  LFC_CUTOFF ~ "Up",
+      padj < PADJ_CUTOFF & log2FoldChange < -LFC_CUTOFF ~ "Down",
+      TRUE                                               ~ "NS"
+    )) %>%
+    arrange(padj)
+  
+  ann    <- annotate_genes(res_df$gene_id)
+  res_df <- left_join(res_df, ann, by = "gene_id") %>%
+    select(gene_id, gene_symbol, everything())
+  
+  cat("  DEGs (padj <", PADJ_CUTOFF, "& |LFC| >", LFC_CUTOFF, "):  Up =",
+      sum(res_df$Expression == "Up"), "| Down =", sum(res_df$Expression == "Down"), "\n")
+  
+  ct_safe <- safe(cell_type)
+  fwrite(res_df, file.path(results_dir, paste0("DESeq2_results_", ct_safe, ".csv")))
+  
+  vst_mat <- assay(vst(dds, blind = FALSE))
+  vst_df  <- as.data.frame(vst_mat) %>% rownames_to_column("gene_id")
+  fwrite(vst_df, file.path(vst_dir, paste0("VST_counts_", ct_safe, ".csv")))
+  
+  cat("  ✓ Saved: results, VST counts, dispersion plot\n")
+  
+  list(dds = dds, results = res_df, vst = vst_mat, meta = meta_sub)
+}
+```
+
+
+
+# for running All 7 Cell Types
+
+```{r run-all}
+all_results <- list()
+for (ct in CELL_TYPES) {
+  all_results[[ct]] <- run_deseq2(ct)
+}
+cat("\n analysis complete.\n")
+```
+
+
+
+# Summary Table
+
+```{r summary}
+summary_df <- bind_rows(lapply(names(all_results), function(nm) {
+  r <- all_results[[nm]]; if (is.null(r)) return(NULL)
+  data.frame(
+    CellType   = nm,
+    N_Samples  = nrow(r$meta),
+    N_Genes    = nrow(r$results),
+    N_Up       = sum(r$results$Expression == "Up"),
+    N_Down     = sum(r$results$Expression == "Down"),
+    N_Total    = sum(r$results$Expression %in% c("Up", "Down")),
+    Top_Gene   = r$results$gene_symbol[1]
+  )
+})) %>% arrange(desc(N_Total))
+
+fwrite(summary_df, file.path(output_dir, "DEG_summary.csv"))
+knitr::kable(summary_df, caption = "DESeq2 DEG Summary — ALS vs Healthy Control (sorted by total DEGs)")
+```
+

@@ -1,0 +1,8 @@
+CellType,N_Samples,N_Genes,N_Up,N_Down,N_Total,Top_Gene
+Neutrophils,7,7215,10,28,38,DDX3Y
+Monocytes,7,8739,18,16,34,DDX3Y
+NK,7,8968,16,12,28,XIST
+Whole Blood,7,9627,9,16,25,RPS4Y1
+CD4,7,8896,12,2,14,RPS4Y1
+B-cells,7,8947,11,3,14,DDX3Y
+CD8,7,8989,12,1,13,XIST

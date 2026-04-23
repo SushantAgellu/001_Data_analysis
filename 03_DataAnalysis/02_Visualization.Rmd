@@ -1,0 +1,532 @@
+---
+title: "02 — Visualization (ALS vs Healthy Control)"
+author: "Sushant Agellu"
+date: "2026-04-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.align = "center", fig.width = 9, fig.height = 6)
+
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(pheatmap)
+library(RColorBrewer)
+library(DESeq2)
+library(tibble)
+library(grid)
+
+select  <- dplyr::select
+filter  <- dplyr::filter
+mutate  <- dplyr::mutate
+arrange <- dplyr::arrange
+```
+
+
+# Paths — Update These to Match Your Machine
+
+```{r paths}
+clean_dir   <- "D:/sushant masters at SLU/Data analysis/001_Data_analysis/01_DataCleaning"
+
+# Input: outputs from 01_StatisticalAnalysis 
+stats_dir   <- "D:/sushant masters at SLU/Data analysis/001_Data_analysis/03_DataAnalysis/01_StatisticalAnalysis"
+results_dir <- file.path(stats_dir, "01_DESeq2_results")
+vst_dir     <- file.path(stats_dir, "02_VST_counts")
+
+# Output folder 
+plot_dir    <- "D:/sushant masters at SLU/Data analysis/001_Data_analysis/03_DataAnalysis/02_Visualization"
+if (!dir.exists(plot_dir)) dir.create(plot_dir, recursive = TRUE)
+```
+
+
+# Parameters
+
+```{r parameters}
+DISEASE_A    <- "ALS"
+DISEASE_B    <- "Healthy Control"
+
+COLOR_ALS    <- "#984EA3"
+COLOR_HC     <- "#377EB8"
+COLOR_UP     <- "#E41A1C"
+COLOR_DOWN   <- "#377EB8"
+COLOR_NS     <- "grey70"
+
+PADJ_CUTOFF  <- 0.05
+LFC_CUTOFF   <- 1.0
+N_LABEL      <- 15
+
+CELL_TYPES   <- c("Neutrophils", "Monocytes", "CD4", "CD8", "B-cells", "NK", "Whole Blood")
+FOCUS_CELLS  <- c("Neutrophils", "Monocytes")   # top 2 by DEG count
+
+# PNG export settings
+PNG_DPI      <- 300
+
+safe <- function(x) gsub("[^A-Za-z0-9]", "_", x)
+
+load_results <- function(cell_type) {
+  f <- file.path(results_dir, paste0("DESeq2_results_", safe(cell_type), ".csv"))
+  if (!file.exists(f)) { message("Missing: ", f); return(NULL) }
+  fread(f)
+}
+load_vst <- function(cell_type) {
+  f <- file.path(vst_dir, paste0("VST_counts_", safe(cell_type), ".csv"))
+  if (!file.exists(f)) { message("Missing: ", f); return(NULL) }
+  df <- as.data.frame(fread(f))
+  rownames(df) <- df$gene_id
+  df$gene_id <- NULL
+  df
+}
+
+# Convenience wrapper for PNG saves
+save_png <- function(plot, filename, width, height) {
+  ggsave(file.path(plot_dir, filename), plot,
+         width = width, height = height, dpi = PNG_DPI, bg = "white")
+}
+```
+
+
+
+# Loading the Shared Data
+
+```{r load-shared}
+counts_clean <- fread(file.path(clean_dir, "GSE60424_counts_clean.csv"))
+sample_map   <- fread(file.path(clean_dir, "GSE60424_sample_map.csv"))
+
+counts_mat           <- as.data.frame(counts_clean)
+rownames(counts_mat) <- counts_mat$gene_id
+counts_mat$gene_id   <- NULL
+```
+
+
+
+#Sample Counts
+
+```{r plot01-sample-counts, fig.height=5}
+meta_sub <- sample_map %>%
+  filter(diseasestatus_ch1 %in% c(DISEASE_A, DISEASE_B))
+
+p01 <- ggplot(meta_sub, aes(x = celltype_ch1, fill = diseasestatus_ch1)) +
+  geom_bar(position = position_dodge(width = 0.8), width = 0.7, colour = "white") +
+  geom_text(stat = "count", aes(label = after_stat(count)),
+            position = position_dodge(width = 0.8),
+            vjust = -0.3, size = 3.8, fontface = "bold") +
+  scale_fill_manual(values = setNames(c(COLOR_ALS, COLOR_HC), c(DISEASE_A, DISEASE_B))) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(title = "Sample Counts: ALS vs Healthy Control",
+       x = "Cell Type", y = "Number of Samples", fill = NULL) +
+  theme_classic(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1),
+        legend.position = "top")
+
+print(p01)
+save_png(p01, "01_SampleCounts.png", 8, 5)
+```
+
+
+
+# for the  Global PCA
+
+```{r plot02-global-pca}
+meta_all <- sample_map %>% filter(diseasestatus_ch1 %in% c(DISEASE_A, DISEASE_B))
+libs_all   <- intersect(meta_all$lib_id, colnames(counts_mat))
+counts_all <- counts_mat[, libs_all, drop = FALSE]
+meta_all   <- meta_all %>% filter(lib_id %in% libs_all) %>%
+  arrange(match(lib_id, colnames(counts_all)))
+
+keep_all <- rowSums(counts_all >= 10) >= 3
+dds_all  <- DESeqDataSetFromMatrix(
+  counts_all[keep_all, ],
+  colData = data.frame(disease  = factor(meta_all$diseasestatus_ch1),
+                       celltype = factor(meta_all$celltype_ch1),
+                       row.names = meta_all$lib_id),
+  design  = ~ 1
+)
+vst_all  <- assay(vst(dds_all, blind = TRUE))
+
+top_var  <- order(rowVars(vst_all), decreasing = TRUE)[1:2000]
+pca_res  <- prcomp(t(vst_all[top_var, ]), scale. = FALSE)
+pct_var  <- round(100 * pca_res$sdev^2 / sum(pca_res$sdev^2), 1)
+pca_df   <- data.frame(pca_res$x[, 1:2],
+                       Disease  = meta_all$diseasestatus_ch1,
+                       CellType = meta_all$celltype_ch1)
+
+p02 <- ggplot(pca_df, aes(PC1, PC2, colour = CellType, shape = Disease)) +
+  geom_point(size = 3.8, alpha = 0.9) +
+  scale_colour_brewer(palette = "Set1") +
+  scale_shape_manual(values = c(16, 17)) +
+  labs(title    = "Global PCA — All Samples",
+       subtitle = "Dominant variation is driven by cell type, not disease status",
+       x = paste0("PC1 (", pct_var[1], "%)"),
+       y = paste0("PC2 (", pct_var[2], "%)")) +
+  theme_classic(base_size = 13)
+
+print(p02)
+save_png(p02, "02_PCA_Global.png", 8, 6)
+```
+
+
+
+# Showing of the DEG Summary Bar
+
+```{r plot03-deg-summary, fig.height=5.5}
+summary_rows <- list()
+for (ct in CELL_TYPES) {
+  r <- load_results(ct); if (is.null(r)) next
+  n_up   <- sum(r$Expression == "Up")
+  n_down <- sum(r$Expression == "Down")
+  summary_rows[[ct]] <- data.frame(
+    CellType  = ct,
+    Direction = c("Up", "Down"),
+    Count     = c(n_up, -n_down),
+    Label     = c(n_up, n_down)
+  )
+}
+summary_df <- bind_rows(summary_rows)
+order_ct <- summary_df %>% group_by(CellType) %>%
+  summarise(tot = sum(abs(Count))) %>% arrange(desc(tot)) %>% pull(CellType)
+summary_df$CellType <- factor(summary_df$CellType, levels = order_ct)
+
+p03 <- ggplot(summary_df, aes(CellType, Count, fill = Direction)) +
+  geom_col(width = 0.7) +
+  geom_text(aes(label = Label,
+                vjust = ifelse(Count >= 0, -0.4, 1.3)),
+            size = 4, fontface = "bold") +
+  geom_hline(yintercept = 0, colour = "black", linewidth = 0.4) +
+  scale_fill_manual(values = c(Up = COLOR_UP, Down = COLOR_DOWN)) +
+  scale_y_continuous(expand = expansion(mult = c(0.15, 0.15)), labels = abs) +
+  labs(title    = "DEG Counts Across Cell Types — ALS vs Healthy Control",
+       subtitle = paste("padj <", PADJ_CUTOFF, "& |LFC| >", LFC_CUTOFF,
+                        " — sorted by total DEGs"),
+       x = "Cell Type", y = "Number of DEGs (Down ← → Up)", fill = NULL) +
+  theme_classic(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 25, hjust = 1),
+        legend.position = "top")
+
+print(p03)
+save_png(p03, "03_DEG_Summary.png", 8.5, 5.5)
+```
+
+
+
+# Focused PCA of Neutrophils & Monocytes
+
+```{r plot04-05-focus-pca, fig.height=5}
+plot_focus_pca <- function(cell_type) {
+  vst_focus  <- load_vst(cell_type)
+  meta_focus <- sample_map %>%
+    filter(lib_id %in% colnames(vst_focus),
+           diseasestatus_ch1 %in% c(DISEASE_A, DISEASE_B)) %>%
+    arrange(match(lib_id, colnames(vst_focus)))
+  
+  vst_mat  <- as.matrix(vst_focus[, meta_focus$lib_id])
+  tv       <- order(rowVars(vst_mat), decreasing = TRUE)[1:2000]
+  pca_f    <- prcomp(t(vst_mat[tv, ]), scale. = FALSE)
+  pct_f    <- round(100 * pca_f$sdev^2 / sum(pca_f$sdev^2), 1)
+  df_pca   <- data.frame(pca_f$x[, 1:2],
+                         Disease = factor(meta_focus$diseasestatus_ch1,
+                                          levels = c(DISEASE_B, DISEASE_A)))
+  
+  ggplot(df_pca, aes(PC1, PC2, colour = Disease, fill = Disease)) +
+    stat_ellipse(geom = "polygon", alpha = 0.12, level = 0.85, linewidth = 0.8) +
+    geom_point(size = 4.5, alpha = 0.9) +
+    scale_colour_manual(values = setNames(c(COLOR_ALS, COLOR_HC), c(DISEASE_A, DISEASE_B))) +
+    scale_fill_manual(  values = setNames(c(COLOR_ALS, COLOR_HC), c(DISEASE_A, DISEASE_B))) +
+    labs(title = paste("PCA —", cell_type),
+         subtitle = paste(DISEASE_A, "vs", DISEASE_B),
+         x = paste0("PC1 (", pct_f[1], "%)"),
+         y = paste0("PC2 (", pct_f[2], "%)")) +
+    theme_classic(base_size = 13) +
+    theme(legend.position = "top")
+}
+
+pca_numbers <- c("04", "05")
+for (i in seq_along(FOCUS_CELLS)) {
+  ct <- FOCUS_CELLS[i]
+  p  <- plot_focus_pca(ct)
+  print(p)
+  save_png(p, paste0(pca_numbers[i], "_PCA_", safe(ct), ".png"), 6, 5)
+}
+```
+
+
+
+#  Volcano Plots of Neutrophils & Monocytes
+
+```{r plot06-07-volcano, fig.height=6.5}
+plot_volcano <- function(cell_type) {
+  r <- load_results(cell_type); if (is.null(r)) return(NULL)
+  
+  r <- r %>% mutate(
+    neg_log10_padj = pmin(-log10(padj + 1e-300), 50),
+    Expression     = factor(Expression, levels = c("Up", "Down", "NS")),
+    label_name     = ifelse(is.na(gene_symbol) | gene_symbol == "",
+                            gene_id, gene_symbol))
+  
+  top_up   <- r %>% filter(Expression == "Up")   %>% slice_head(n = 8)
+  top_down <- r %>% filter(Expression == "Down") %>% slice_head(n = 8)
+  top_lbl  <- bind_rows(top_up, top_down)
+  
+  sc  <- table(r$Expression)
+  sub <- paste0("Up: ", sc["Up"], "  |  Down: ", sc["Down"],
+                "  |  padj < ", PADJ_CUTOFF, " & |LFC| > ", LFC_CUTOFF)
+  
+  ggplot(r, aes(log2FoldChange, neg_log10_padj, colour = Expression)) +
+    geom_point(alpha = 0.55, size = 1.5) +
+    geom_vline(xintercept = c(-LFC_CUTOFF, LFC_CUTOFF), linetype = "dashed", colour = "grey40") +
+    geom_hline(yintercept = -log10(PADJ_CUTOFF),         linetype = "dashed", colour = "grey40") +
+    geom_text_repel(data = top_lbl, aes(label = label_name),
+                    size = 3.2, max.overlaps = 30,
+                    segment.colour = "grey50", fontface = "italic") +
+    scale_colour_manual(values = c(Up = COLOR_UP, Down = COLOR_DOWN, NS = COLOR_NS)) +
+    labs(title    = paste("Volcano —", cell_type),
+         subtitle = sub,
+         x = paste0("log2 Fold Change (", DISEASE_A, " / ", DISEASE_B, ")"),
+         y = "-log10 (adjusted p-value)", colour = NULL) +
+    theme_classic(base_size = 13) +
+    theme(legend.position = "top")
+}
+
+vol_numbers <- c("06", "07")
+for (i in seq_along(FOCUS_CELLS)) {
+  ct <- FOCUS_CELLS[i]
+  p  <- plot_volcano(ct)
+  print(p)
+  save_png(p, paste0(vol_numbers[i], "_Volcano_", safe(ct), ".png"), 7.5, 6.5)
+}
+```
+
+
+
+#Top DEG Heatmaps (Neutrophils & Monocytes)
+
+Each cell type gets its own heatmap of the top 30 DEGs (z-scored VST counts).
+
+```{r plot08-09-heatmap, fig.height=9}
+draw_top_heatmap <- function(cell_type, number_str, n_genes = 30) {
+  r_tbl   <- load_results(cell_type)
+  vst_mat <- as.matrix(load_vst(cell_type))
+  if (is.null(r_tbl) || is.null(vst_mat)) return(NULL)
+  
+  top_genes <- r_tbl %>% filter(Expression != "NS") %>% slice_head(n = n_genes)
+  if (nrow(top_genes) < 2) {
+    message("Not enough DEGs for heatmap: ", cell_type); return(NULL)
+  }
+  
+  meta_hm <- sample_map %>%
+    filter(lib_id %in% colnames(vst_mat),
+           diseasestatus_ch1 %in% c(DISEASE_A, DISEASE_B)) %>%
+    arrange(diseasestatus_ch1)
+  
+  mat_hm <- vst_mat[top_genes$gene_id, meta_hm$lib_id, drop = FALSE]
+  rn     <- top_genes$gene_symbol
+  rn[is.na(rn) | rn == ""] <- top_genes$gene_id[is.na(rn) | rn == ""]
+  rownames(mat_hm) <- make.unique(rn)
+  
+  mat_z <- t(scale(t(mat_hm)))
+  mat_z <- pmax(pmin(mat_z, 3), -3)
+  
+  ann_col    <- data.frame(Disease = meta_hm$diseasestatus_ch1,
+                           row.names = meta_hm$lib_id)
+  ann_colors <- list(Disease = setNames(c(COLOR_ALS, COLOR_HC),
+                                        c(DISEASE_A, DISEASE_B)))
+  
+  out_file <- file.path(plot_dir, paste0(number_str, "_Heatmap_", safe(cell_type), ".png"))
+  
+  # Save PNG
+  pheatmap(
+    mat_z,
+    annotation_col    = ann_col,
+    annotation_colors = ann_colors,
+    color             = colorRampPalette(c("#2166AC", "white", "#B2182B"))(100),
+    cluster_rows      = TRUE,
+    cluster_cols      = TRUE,
+    show_colnames     = FALSE,
+    fontsize_row      = 8,
+    main              = paste("Top", n_genes, "DEGs —", cell_type, "— ALS vs HC"),
+    filename          = out_file,
+    width  = 7,
+    height = 9
+  )
+  
+  # Inline render
+  grid.newpage()
+  pheatmap(
+    mat_z,
+    annotation_col    = ann_col,
+    annotation_colors = ann_colors,
+    color             = colorRampPalette(c("#2166AC", "white", "#B2182B"))(100),
+    cluster_rows      = TRUE,
+    cluster_cols      = TRUE,
+    show_colnames     = FALSE,
+    fontsize_row      = 8,
+    main              = paste("Top", n_genes, "DEGs —", cell_type, "— ALS vs HC")
+  )
+}
+
+draw_top_heatmap("Neutrophils", "08")
+draw_top_heatmap("Monocytes",   "09")
+```
+
+
+
+# Consensus Heatmap (Neutrophils ∩ Monocytes shared DEGs)
+
+#Reasoning part : Identifies genes significantly changed in BOTH Neutrophils AND Monocytes — shared signal is more likely to be a real ALS response (vs cell-type-specific noise). This is the strongest single evidence plot in the presentation.
+
+```{r plot10-consensus-heatmap, fig.height=8}
+# Get significant genes per focus cell type
+deg_sets <- lapply(FOCUS_CELLS, function(ct) {
+  r <- load_results(ct)
+  r %>% filter(Expression != "NS") %>%
+    mutate(CellType = ct) %>%
+    select(gene_id, gene_symbol, log2FoldChange, padj, Expression, CellType)
+})
+names(deg_sets) <- FOCUS_CELLS
+
+# Shared gene IDs (significant in BOTH)
+shared_ids <- Reduce(intersect, lapply(deg_sets, function(d) d$gene_id))
+cat("Shared DEGs between", paste(FOCUS_CELLS, collapse = " and "), ":",
+    length(shared_ids), "\n")
+
+if (length(shared_ids) >= 2) {
+  
+  # Build a matrix of log2 fold changes: rows = shared genes, cols = cell types
+  lfc_mat <- sapply(FOCUS_CELLS, function(ct) {
+    d <- deg_sets[[ct]]
+    d$log2FoldChange[match(shared_ids, d$gene_id)]
+  })
+  rownames(lfc_mat) <- shared_ids
+  
+  # Replace rownames with gene symbols
+  sym_lookup <- deg_sets[[1]][match(shared_ids, deg_sets[[1]]$gene_id), ]
+  rn <- sym_lookup$gene_symbol
+  rn[is.na(rn) | rn == ""] <- shared_ids[is.na(rn) | rn == ""]
+  rownames(lfc_mat) <- make.unique(rn)
+  
+  # Cap extreme values for display
+  lfc_mat_disp <- pmax(pmin(lfc_mat, 6), -6)
+  
+  # Color breaks centered on zero
+  max_abs <- max(abs(lfc_mat_disp), na.rm = TRUE)
+  breaks  <- seq(-max_abs, max_abs, length.out = 101)
+  
+  out_file <- file.path(plot_dir, "10_Consensus_Heatmap_Neutrophils_Monocytes.png")
+  
+  pheatmap(
+    lfc_mat_disp,
+    color         = colorRampPalette(c("#2166AC", "white", "#B2182B"))(100),
+    breaks        = breaks,
+    cluster_rows  = TRUE,
+    cluster_cols  = FALSE,
+    display_numbers = TRUE,
+    number_format = "%.1f",
+    number_color  = "black",
+    fontsize_row  = 9,
+    fontsize_col  = 12,
+    main          = paste0("Consensus DEGs: Neutrophils ∩ Monocytes (n = ",
+                           length(shared_ids), ") — log2 Fold Change"),
+    filename      = out_file,
+    width  = 6,
+    height = max(4, length(shared_ids) * 0.28)
+  )
+  
+  grid.newpage()
+  pheatmap(
+    lfc_mat_disp,
+    color         = colorRampPalette(c("#2166AC", "white", "#B2182B"))(100),
+    breaks        = breaks,
+    cluster_rows  = TRUE,
+    cluster_cols  = FALSE,
+    display_numbers = TRUE,
+    number_format = "%.1f",
+    number_color  = "black",
+    fontsize_row  = 9,
+    fontsize_col  = 12,
+    main          = paste0("Consensus DEGs: Neutrophils ∩ Monocytes (n = ",
+                           length(shared_ids), ") — log2 Fold Change")
+  )
+  
+  # Also export the table
+  consensus_df <- data.frame(
+    gene_id      = shared_ids,
+    gene_symbol  = rownames(lfc_mat),
+    LFC_Neutrophils = lfc_mat[, "Neutrophils"],
+    LFC_Monocytes   = lfc_mat[, "Monocytes"],
+    stringsAsFactors = FALSE
+  )
+  fwrite(consensus_df, file.path(plot_dir, "10_Consensus_DEGs_Neutrophils_Monocytes.csv"))
+  
+} else {
+  cat("Not enough shared DEGs to draw the consensus heatmap.\n")
+}
+```
+
+
+# Appendix: Volcano Plots (remaining cell types)
+
+```{r plot11-appendix-volcanos, fig.height=5.5}
+for (ct in setdiff(CELL_TYPES, FOCUS_CELLS)) {
+  r <- load_results(ct); if (is.null(r)) next
+  
+  r <- r %>% mutate(
+    neg_log10_padj = pmin(-log10(padj + 1e-300), 50),
+    Expression = factor(Expression, levels = c("Up", "Down", "NS")),
+    label_name = ifelse(is.na(gene_symbol) | gene_symbol == "",
+                        gene_id, gene_symbol))
+  top_lbl <- r %>% filter(Expression != "NS") %>% slice_head(n = N_LABEL)
+  sc  <- table(r$Expression)
+  sub <- paste0("Up: ", sc["Up"], "  |  Down: ", sc["Down"])
+  
+  p <- ggplot(r, aes(log2FoldChange, neg_log10_padj, colour = Expression)) +
+    geom_point(alpha = 0.5, size = 1.2) +
+    geom_vline(xintercept = c(-LFC_CUTOFF, LFC_CUTOFF), linetype = "dashed", colour = "grey40") +
+    geom_hline(yintercept = -log10(PADJ_CUTOFF),         linetype = "dashed", colour = "grey40") +
+    geom_text_repel(data = top_lbl, aes(label = label_name),
+                    size = 2.8, max.overlaps = 20, fontface = "italic") +
+    scale_colour_manual(values = c(Up = COLOR_UP, Down = COLOR_DOWN, NS = COLOR_NS)) +
+    labs(title = paste("Volcano —", ct), subtitle = sub,
+         x = "log2 Fold Change", y = "-log10 (padj)", colour = NULL) +
+    theme_classic(base_size = 12) +
+    theme(legend.position = "top")
+  
+  print(p)
+  save_png(p, paste0("11_Volcano_", safe(ct), ".png"), 6.5, 5.5)
+}
+```
+
+---
+
+#Appendix: MA Plots (all cell types)
+
+```{r plot12-appendix-ma, fig.height=5.5}
+for (ct in CELL_TYPES) {
+  r <- load_results(ct); if (is.null(r)) next
+  
+  r <- r %>% mutate(
+    Expression = factor(Expression, levels = c("Up", "Down", "NS")),
+    label_name = ifelse(is.na(gene_symbol) | gene_symbol == "",
+                        gene_id, gene_symbol))
+  top_lbl <- r %>% filter(Expression != "NS") %>% slice_head(n = 10)
+  
+  p <- ggplot(r, aes(log10(baseMean + 1), log2FoldChange, colour = Expression)) +
+    geom_point(alpha = 0.4, size = 1.1) +
+    geom_hline(yintercept = c(-LFC_CUTOFF, 0, LFC_CUTOFF),
+               linetype   = c("dashed", "solid", "dashed"),
+               colour     = c("grey40", "black", "grey40")) +
+    geom_text_repel(data = top_lbl, aes(label = label_name),
+                    size = 2.8, max.overlaps = 15, fontface = "italic") +
+    scale_colour_manual(values = c(Up = COLOR_UP, Down = COLOR_DOWN, NS = COLOR_NS)) +
+    labs(title = paste("MA Plot —", ct),
+         x = "log10 (Mean Count + 1)", y = "log2 Fold Change", colour = NULL) +
+    theme_classic(base_size = 12) +
+    theme(legend.position = "top")
+  
+  print(p)
+  save_png(p, paste0("12_MA_", safe(ct), ".png"), 6.5, 5.5)
+}
+```
+
+
