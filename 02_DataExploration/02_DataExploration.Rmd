@@ -5,6 +5,7 @@ date: "2026-03-18"
 output: html_document
 ---
 
+# Loading the packages data.table for fast I/O, dplyr for manipulation, ggplot2 for plotting
 ```{r setup, include=FALSE}
 library(data.table)
 library(dplyr)
@@ -13,6 +14,8 @@ library(ggplot2)
 ```
 
 
+
+# Loading cleaned metadata and counts from the 01_DataCleaning  step that is stored in the previous folder
 ```{r}
 
 gse_id <- "GSE60424"
@@ -26,7 +29,7 @@ dim(counts)
 ```
 
 
-
+# to display all that has been done , and make sure so far everything is good .
 ```{r}
 names(metadata)
 head(metadata)
@@ -39,6 +42,7 @@ table(metadata$gender_ch1)
 
 
 
+# Sample counts per disease group also checking for group sizes before analysis
 ```{r}
 ggplot(metadata, aes(x = diseasestatus_ch1, fill = diseasestatus_ch1)) +
   geom_bar() +
@@ -59,6 +63,8 @@ ggplot(metadata, aes(x = diseasestatus_ch1, fill = diseasestatus_ch1)) +
 
 ```
 
+
+
 ```{r}
 
 head(counts[, 1:6])
@@ -70,6 +76,8 @@ dim(expr_only)
 summary(expr_only[, 1:5])
 ```
 
+
+# Library-size QC: histogram of total counts per sample to flag any outliers
 ```{r}
 sample_totals <- colSums(expr_only)
 
@@ -86,68 +94,74 @@ ggplot(sample_totals_df, aes(x = total_counts)) +
        y = "Number of Samples")
 ```
 
+
+
 ```{r}
 expr_log <- log2(expr_only + 1)
 summary(expr_log[, 1:5])
 ```
+
+
+
+# Exploratory PCA  ALS vs Healthy Control just to get a initial look at whether groups separate
 ```{r}
 
-# #  Subset metadata (ALS vs Healthy)
-# metadata_sub <- metadata %>%
-#   filter(diseasestatus_ch1 %in% c("ALS", "Healthy Control"))
-# 
-# #  Expression matrix
-# expr_matrix <- as.matrix(counts[, -1])
-# 
-# expr_log <- log2(expr_matrix + 1)
-# 
-# samples_keep <- metadata_sub$title
-# expr_sub <- expr_log[, samples_keep]
-# 
-# 
-# keep_genes <- apply(expr_sub, 1, var) > 0
-# expr_sub <- expr_sub[keep_genes, ]
-# 
-# # Step 5: PCA
-# pca <- prcomp(t(expr_sub), scale. = TRUE)
-# 
-# # Percent variance explained
-# percent_var <- round(100 * (pca$sdev^2 / sum(pca$sdev^2)), 1)
-# 
-# # PCA dataframe
-# pca_df <- data.frame(
-#   sample = rownames(pca$x),
-#   PC1 = pca$x[, 1],
-#   PC2 = pca$x[, 2]
-# )
-# 
+ #  Subset metadata (ALS vs Healthy)
+ metadata_sub <- metadata %>%
+   filter(diseasestatus_ch1 %in% c("ALS", "Healthy Control"))
+ 
+ #  Expression matrix
+ expr_matrix <- as.matrix(counts[, -1])
+ 
+ expr_log <- log2(expr_matrix + 1)
+ 
+ samples_keep <- metadata_sub$title
+ expr_sub <- expr_log[, samples_keep]
+ 
+ # Remove zero-variance genes (constant across selected samples) before PCA
+ keep_genes <- apply(expr_sub, 1, var) > 0
+ expr_sub <- expr_sub[keep_genes, ]
+ 
+ # Step 5: PCA
+ pca <- prcomp(t(expr_sub), scale. = TRUE)
+ 
+ # Percent variance explained
+ percent_var <- round(100 * (pca$sdev^2 / sum(pca$sdev^2)), 1)
+ 
+ # PCA dataframe
+ pca_df <- data.frame(
+   sample = rownames(pca$x),
+   PC1 = pca$x[, 1],
+   PC2 = pca$x[, 2]
+ )
+ 
 # # Add disease labels
-# metadata_sub$sample <- metadata_sub$title
-# pca_df <- merge(pca_df, metadata_sub[, c("sample", "diseasestatus_ch1")], by = "sample")
-# 
-# # Plot
-# pca_plot_ALS <- ggplot(pca_df, aes(x = PC1, y = PC2, color = diseasestatus_ch1)) +
-#   geom_point(size = 3) +
-#   scale_color_manual(values = c(
-#     "Healthy Control" = "green",
-#     "ALS" = "purple"
-#   )) +
-#   theme_minimal() +
-#   labs(
-#     title = "PCA: ALS vs Healthy Control",
-#     x = paste0("PC1 (", percent_var[1], "%)"),
-#     y = paste0("PC2 (", percent_var[2], "%)"),
-#     color = "Disease"
-#   )
-# 
-# # Save PNG
-# ggsave("PCA_plot_ALS.png", plot = pca_plot_ALS, width = 8, height = 6, dpi = 300)
-
+ metadata_sub$sample <- metadata_sub$title
+ pca_df <- merge(pca_df, metadata_sub[, c("sample", "diseasestatus_ch1")], by = "sample")
+ 
+ # Plot
+ pca_plot_ALS <- ggplot(pca_df, aes(x = PC1, y = PC2, color = diseasestatus_ch1)) +
+   geom_point(size = 3) +
+   scale_color_manual(values = c(
+     "Healthy Control" = "green",
+     "ALS" = "purple"
+   )) +
+   theme_minimal() +
+   labs(
+     title = "PCA: ALS vs Healthy Control",
+     x = paste0("PC1 (", percent_var[1], "%)"),
+     y = paste0("PC2 (", percent_var[2], "%)"),
+     color = "Disease"
+   )
+ 
+ # Save PNG
+ ggsave("PCA_plot_ALS.png", plot = pca_plot_ALS, width = 8, height = 6, dpi = 300)
+pca_plot_ALS
 
 ```
 
 
-## For T1D
+## For T1D (Type 1 Diabetes) vs Healthy Control (Whole Blood only) — comparison with ALS result
 ```{r}
 
 # Keep only T1D and Healthy Control whole blood samples

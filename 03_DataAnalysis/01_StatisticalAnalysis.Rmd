@@ -5,6 +5,9 @@ date: "2026-04-22"
 output: html_document
 ---
 
+
+# Loading the libraries
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 
@@ -21,7 +24,7 @@ arrange <- dplyr::arrange
 
 
 
-# Paths — Update These to Match Your Machine
+# Setting up directories for the outputs 
 
 ```{r paths}
 clean_dir    <- "D:/sushant masters at SLU/Data analysis/001_Data_analysis/01_DataCleaning"
@@ -43,7 +46,7 @@ for (d in c(output_dir, results_dir, vst_dir, dispersion_dir)) {
 
 
 
-# Load Cleaned Data
+# Loading the Cleaned Data
 
 ```{r load-data}
 counts_clean <- fread(file.path(clean_dir, "GSE60424_counts_clean.csv"))
@@ -59,7 +62,7 @@ cat("\nSamples per cell type:\n");     print(table(sample_map$celltype_ch1))
 ```
 
 
-# Parameters
+# putting in the Parameters  diesease, control , and cell types
 
 ```{r parameters}
 DISEASE_A   <- "ALS"
@@ -77,7 +80,8 @@ safe <- function(x) gsub("[^A-Za-z0-9]", "_", x)
 
 
 
-# Gene Symbol Annotation (Converts Ensembl IDs → gene symbols). Requires `org.Hs.eg.db` 
+# Gene Symbol Annotation (Converts Ensembl IDs → gene symbols). 
+# This step Required a special package `org.Hs.eg.db` 
 
 ```{r annotation}
 annotate_genes <- function(gene_ids) {
@@ -106,8 +110,7 @@ annotate_genes <- function(gene_ids) {
 
 
 
-# DESeq2 Analysis Function
-
+# DESeq2 Analysis Function and what all we are considering for the DESeq2 analysis part
 #For each cell type:
 #1. Subsets samples (ALS + HC only)
 #2. Filters low-count genes (≥10 counts in ≥2 samples)
@@ -186,7 +189,7 @@ run_deseq2 <- function(cell_type) {
 
 
 
-# for running All 7 Cell Types
+# for running All 7 Cell Types loop
 
 ```{r run-all}
 all_results <- list()
@@ -198,7 +201,7 @@ cat("\n analysis complete.\n")
 
 
 
-# Summary Table
+# Summary Table just to get a over look output idea
 
 ```{r summary}
 summary_df <- bind_rows(lapply(names(all_results), function(nm) {

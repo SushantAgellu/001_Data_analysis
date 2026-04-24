@@ -5,6 +5,9 @@ date: "2026-04-22"
 output: html_document
 ---
 
+
+
+# Loading the Libraries  
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
                       fig.align = "center", fig.width = 9, fig.height = 6)
@@ -26,12 +29,12 @@ arrange <- dplyr::arrange
 ```
 
 
-# Paths — Update These to Match Your Machine
+# Setting up directories for the outputs 
 
 ```{r paths}
 clean_dir   <- "D:/sushant masters at SLU/Data analysis/001_Data_analysis/01_DataCleaning"
 
-# Input: outputs from 01_StatisticalAnalysis 
+# Input and output  from 01_StatisticalAnalysis  file produced
 stats_dir   <- "D:/sushant masters at SLU/Data analysis/001_Data_analysis/03_DataAnalysis/01_StatisticalAnalysis"
 results_dir <- file.path(stats_dir, "01_DESeq2_results")
 vst_dir     <- file.path(stats_dir, "02_VST_counts")
@@ -42,7 +45,7 @@ if (!dir.exists(plot_dir)) dir.create(plot_dir, recursive = TRUE)
 ```
 
 
-# Parameters
+# adding the Parameters healthy, affected, upregulated and downregulated, and neutral(also all the cell tyoes)
 
 ```{r parameters}
 DISEASE_A    <- "ALS"
@@ -80,7 +83,8 @@ load_vst <- function(cell_type) {
   df
 }
 
-# Convenience wrapper for PNG saves
+# Convenience wrapper for PNG saves that would my plots as a backup in folder in case there's a rendering issue during the knitting process
+
 save_png <- function(plot, filename, width, height) {
   ggsave(file.path(plot_dir, filename), plot,
          width = width, height = height, dpi = PNG_DPI, bg = "white")
@@ -102,7 +106,7 @@ counts_mat$gene_id   <- NULL
 
 
 
-#Sample Counts
+# Sample Counts from the previously generated matrixes
 
 ```{r plot01-sample-counts, fig.height=5}
 meta_sub <- sample_map %>%
@@ -302,7 +306,7 @@ for (i in seq_along(FOCUS_CELLS)) {
 
 #Top DEG Heatmaps (Neutrophils & Monocytes)
 
-Each cell type gets its own heatmap of the top 30 DEGs (z-scored VST counts).
+# Each cell type gets its own heatmap of the top 30 DEGs to make sure for the DEG.
 
 ```{r plot08-09-heatmap, fig.height=9}
 draw_top_heatmap <- function(cell_type, number_str, n_genes = 30) {
@@ -372,7 +376,7 @@ draw_top_heatmap("Monocytes",   "09")
 
 
 
-# Consensus Heatmap (Neutrophils ∩ Monocytes shared DEGs)
+# Consensus Heatmap (Neutrophils and Monocytes shared DEGs)
 
 #Reasoning part : Identifies genes significantly changed in BOTH Neutrophils AND Monocytes — shared signal is more likely to be a real ALS response (vs cell-type-specific noise). This is the strongest single evidence plot in the presentation.
 
@@ -497,7 +501,8 @@ for (ct in setdiff(CELL_TYPES, FOCUS_CELLS)) {
 }
 ```
 
----
+
+
 
 #Appendix: MA Plots (all cell types)
 

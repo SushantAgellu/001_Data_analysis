@@ -358,8 +358,11 @@ Healthy Control)</h1>
 </div>
 
 
-<div id="paths-update-these-to-match-your-machine" class="section level1">
-<h1>Paths — Update These to Match Your Machine</h1>
+<div id="loading-the-libraries" class="section level1">
+<h1>Loading the libraries</h1>
+</div>
+<div id="setting-up-directories-for-the-outputs" class="section level1">
+<h1>Setting up directories for the outputs</h1>
 <pre class="r"><code>clean_dir    &lt;- &quot;D:/sushant masters at SLU/Data analysis/001_Data_analysis/01_DataCleaning&quot;
 
 # Base output folder
@@ -374,8 +377,8 @@ for (d in c(output_dir, results_dir, vst_dir, dispersion_dir)) {
   if (!dir.exists(d)) dir.create(d, recursive = TRUE)
 }</code></pre>
 </div>
-<div id="load-cleaned-data" class="section level1">
-<h1>Load Cleaned Data</h1>
+<div id="loading-the-cleaned-data" class="section level1">
+<h1>Loading the Cleaned Data</h1>
 <pre class="r"><code>counts_clean &lt;- fread(file.path(clean_dir, &quot;GSE60424_counts_clean.csv&quot;))
 sample_map   &lt;- fread(file.path(clean_dir, &quot;GSE60424_sample_map.csv&quot;))
 
@@ -402,8 +405,8 @@ cat(&quot;Counts matrix:&quot;, nrow(counts_mat), &quot;genes ×&quot;, ncol(cou
 ## Whole Blood 
 ##          20</code></pre>
 </div>
-<div id="parameters" class="section level1">
-<h1>Parameters</h1>
+<div id="putting-in-the-parameters-diesease-control-and-cell-types" class="section level1">
+<h1>putting in the Parameters diesease, control , and cell types</h1>
 <pre class="r"><code>DISEASE_A   &lt;- &quot;ALS&quot;
 DISEASE_B   &lt;- &quot;Healthy Control&quot;
 
@@ -416,9 +419,11 @@ LFC_CUTOFF  &lt;- 1.0
 
 safe &lt;- function(x) gsub(&quot;[^A-Za-z0-9]&quot;, &quot;_&quot;, x)</code></pre>
 </div>
-<div id="gene-symbol-annotation-converts-ensembl-ids-gene-symbols.-requires-org.hs.eg.db" class="section level1">
-<h1>Gene Symbol Annotation (Converts Ensembl IDs → gene symbols).
-Requires <code>org.Hs.eg.db</code></h1>
+<div id="gene-symbol-annotation-converts-ensembl-ids-gene-symbols." class="section level1">
+<h1>Gene Symbol Annotation (Converts Ensembl IDs → gene symbols).</h1>
+</div>
+<div id="this-step-required-a-special-package-org.hs.eg.db" class="section level1">
+<h1>This step Required a special package <code>org.Hs.eg.db</code></h1>
 <pre class="r"><code>annotate_genes &lt;- function(gene_ids) {
   gene_ids_clean &lt;- sub(&quot;\\..*$&quot;, &quot;&quot;, gene_ids)
   
@@ -442,8 +447,9 @@ Requires <code>org.Hs.eg.db</code></h1>
   data.frame(gene_id = gene_ids, gene_symbol = gene_ids, stringsAsFactors = FALSE)
 }</code></pre>
 </div>
-<div id="deseq2-analysis-function" class="section level1">
-<h1>DESeq2 Analysis Function</h1>
+<div id="deseq2-analysis-function-and-what-all-we-are-considering-for-the-deseq2-analysis-part" class="section level1">
+<h1>DESeq2 Analysis Function and what all we are considering for the
+DESeq2 analysis part</h1>
 <p>#For each cell type: #1. Subsets samples (ALS + HC only) #2. Filters
 low-count genes (≥10 counts in ≥2 samples) #3. Fits DESeq2
 negative-binomial GLM with design = ~ disease #4. Runs the Wald test,
@@ -516,8 +522,8 @@ dispersion plot (PNG)</p>
   list(dds = dds, results = res_df, vst = vst_mat, meta = meta_sub)
 }</code></pre>
 </div>
-<div id="for-running-all-7-cell-types" class="section level1">
-<h1>for running All 7 Cell Types</h1>
+<div id="for-running-all-7-cell-types-loop" class="section level1">
+<h1>for running All 7 Cell Types loop</h1>
 <pre class="r"><code>all_results &lt;- list()
 for (ct in CELL_TYPES) {
   all_results[[ct]] &lt;- run_deseq2(ct)
@@ -582,8 +588,8 @@ for (ct in CELL_TYPES) {
 <pre><code>## 
 ##  analysis complete.</code></pre>
 </div>
-<div id="summary-table" class="section level1">
-<h1>Summary Table</h1>
+<div id="summary-table-just-to-get-a-over-look-output-idea" class="section level1">
+<h1>Summary Table just to get a over look output idea</h1>
 <pre class="r"><code>summary_df &lt;- bind_rows(lapply(names(all_results), function(nm) {
   r &lt;- all_results[[nm]]; if (is.null(r)) return(NULL)
   data.frame(
