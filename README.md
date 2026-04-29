@@ -201,5 +201,39 @@ DESeq2 is the field-standard method for small-sample RNA-seq differential expres
 3. **Beers DR, Appel SH.** (2019). Immune dysregulation in amyotrophic lateral sclerosis. *Lancet Neurology* 18(2): 211–220.
 4. **Murdock BJ, et al.** (2017). Correlation of peripheral immunity with rapid ALS progression. *JAMA Neurology* 74(12): 1446–1454.
 
+## 13. Code of ethics 
+## Code of Ethics & Data Use Compliance
+
+In thisproject only publicly archived human RNA-seq data was utilized and is therefore governed by codes of ethics covering 
+(a) the data source
+(b) human genomic data sharing
+(c) responsible conduct in human-genetics research. 
+
+### 1. NCBI GEO Data Use Policy
+
+**Source:** [https://www.ncbi.nlm.nih.gov/geo/info/disclaimer.html](https://www.ncbi.nlm.nih.gov/geo/info/disclaimer.html)
+
+>**GEO Disclaimer, paragraph 1, sentence 2:** *"NCBI places no restrictions on the use or distribution of the GEO data. However, some submitters may claim patent, copyright, or other intellectual property rights in all or a portion of the data they have submitted."*
+
+GEO: GSE60424 Dataset (open-access archive) - GEO is the open-access archive, which we use to host the dataset in this study. Its policy reads that there are no limitations on the use or Distribution of the GEO data by NCBI, although some submitters may assert patent, copyright or other intellectual property rights in all or part of any submitted text. Along with all applicable federal, Tribal, state and local laws, regulations, statutes, guidance and institutional policies at the time of deposit—human-derived submissions to unrestricted-access GEO must already comply with the original consent.
+
+**For this Repository and the Project:**
+- Data downloaded only from the official GEO repository — no scraping or unauthorized redistribution was performed .
+- The original data submitters (Linsley et al., 2014) are credited in this README and in the project report.
+- Only the obtained analytical outputs (filtered counts, DEG tables, normalized expression for visualization) are committed to this repository — not the raw GEO deposit.
+- Re-identification of the donors was not at all attempted respecting IPR and Donor Privacy.
+
+### 2. NIH Genomic Data Sharing (GDS) Policy
+
+**Source:** [https://grants.nih.gov/grants/guide/notice-files/not-od-14-124.html](https://grants.nih.gov/grants/guide/notice-files/not-od-14-124.html)
+
+> **GEO FAQ, "Human Subject Guidelines" section:** *"If you plan to submit genomic data from human specimens... it is your responsibility to ensure that the submitted information does not compromise participant privacy, and is in accord with the original consent, in addition to all applicable laws, regulations, and institutional policies."*
+
+This is the framework GEO operates under.The GDS Policy covers all NIH-funded research that generates large-scale human or non-human genomic data and the use of such data for subsequent research; and large-scale data explicitly includes transcriptomic, metagenomic, epigenomic and gene expression.
+
+**For this Repository and the Project:**
+- The data are used only for the educational/research purpose stated in this README — characterizing transcriptional differences between ALS and Healthy Control donors.
+- Data are not re-distributed; the cleaned files committed to this repository are derived analytical outputs (filtered count matrices, DEG tables, normalized expression for visualization), not the raw deposit.
+
 
 
